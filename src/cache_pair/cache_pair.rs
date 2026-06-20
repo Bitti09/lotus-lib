@@ -35,4 +35,9 @@ pub trait CachePair {
     ///
     /// This is used to reset the TOC file to the beginning.
     fn unread_toc(&mut self);
+
+    /// Returns the size of the cache file.
+    fn cache_size(&self) -> u64 {
+        std::fs::metadata(self.cache_path()).map(|m| m.len()).unwrap_or(0)
+    }
 }

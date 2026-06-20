@@ -17,17 +17,20 @@ pub struct CachePairReader {
     cache_path: PathBuf,
     toc: Toc,
     cache_file: Mutex<Option<File>>,
+    cache_size: u64,
 }
 
 impl CachePair for CachePairReader {
     fn new(toc_path: PathBuf, cache_path: PathBuf, is_post_ensmallening: bool) -> Self {
         let toc = Toc::new(toc_path.clone());
+        let cache_size = std::fs::metadata(&cache_path).map(|m| m.len()).unwrap_or(0);
         Self {
             is_post_ensmallening,
             toc_path,
             cache_path,
             toc,
             cache_file: Mutex::new(None),
+            cache_size,
         }
     }
 
@@ -49,6 +52,10 @@ impl CachePair for CachePairReader {
 
     fn unread_toc(&mut self) {
         self.toc.unread_toc()
+    }
+
+    fn cache_size(&self) -> u64 {
+        self.cache_size
     }
 }
 

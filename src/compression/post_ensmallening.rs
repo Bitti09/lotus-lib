@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::cmp::min_by;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -8,6 +9,10 @@ use log::debug;
 use crate::compression::lz::decompress_lz;
 use crate::compression::oodle::decompress_oodle;
 
+thread_local! {
+    static DECOMPRESS_BUFFER: RefCell<Vec<u8>> = RefCell::new(vec![0u8; 0x40000]);
+}
+
 /// Decompresses data from a post-ensmallening cache block structure.
 pub fn decompress_post_ensmallening(
     compressed_len: usize,
@@ -15,67 +20,71 @@ pub fn decompress_post_ensmallening(
     cache_reader: &mut File,
 ) -> Result<Vec<u8>> {
     let mut decompressed_data = vec![0u8; decompressed_len];
-    let mut compressed_buffer = vec![0u8; 0x40000];
     let mut decompressed_pos = 0;
 
     let cache_len = cache_reader.metadata()?.len() as usize;
 
-    while decompressed_pos < decompressed_len {
-        let (block_comp_len, block_decomp_len) =
-            get_block_lengths(cache_reader)?.unwrap_or((compressed_len, decompressed_len));
-        debug!(
-            "Decompressing block, compressed_len: {}, decompressed_len: {}",
-            block_comp_len, block_decomp_len
-        );
+    DECOMPRESS_BUFFER.with(|buf| {
+        let mut compressed_buffer = buf.borrow_mut();
 
-        if decompressed_pos + block_decomp_len > decompressed_len {
-            return Err(anyhow::anyhow!(
-                "Decompressed past the file length, \
-                decompressed_pos: {}, decompressed_len: {}, file_len: {}",
-                decompressed_pos,
-                block_decomp_len,
-                decompressed_len
-            ));
+        while decompressed_pos < decompressed_len {
+            let (block_comp_len, block_decomp_len) =
+                get_block_lengths(cache_reader)?.unwrap_or((compressed_len, decompressed_len));
+            debug!(
+                "Decompressing block, compressed_len: {}, decompressed_len: {}",
+                block_comp_len, block_decomp_len
+            );
+
+            if decompressed_pos + block_decomp_len > decompressed_len {
+                return Err(anyhow::anyhow!(
+                    "Decompressed past the file length, \
+                    decompressed_pos: {}, decompressed_len: {}, file_len: {}",
+                    decompressed_pos,
+                    block_decomp_len,
+                    decompressed_len
+                ));
+            }
+
+            let cache_offset = cache_reader.seek(SeekFrom::Current(0))? as usize;
+            let remaining_len = cache_len - cache_offset;
+            if block_comp_len > min_by(remaining_len, 0x40000, |a, b| a.cmp(b)) {
+                return Err(anyhow::anyhow!(
+                    "Tried to read beyond limits, probably not a compressed file, \
+                    compressed_len: {}, remaining_len: {}",
+                    block_comp_len,
+                    remaining_len
+                ));
+            }
+
+            let is_oodle = is_oodle_block(cache_reader)?;
+            cache_reader.read_exact(&mut compressed_buffer[..block_comp_len])?;
+
+            if is_oodle {
+                debug!("Decompressing with oodle ({} bytes)", block_comp_len);
+                decompress_oodle(
+                    &compressed_buffer,
+                    block_comp_len,
+                    &mut decompressed_data[decompressed_pos as usize..],
+                    block_decomp_len,
+                )?;
+            } else if block_comp_len == block_decomp_len {
+                debug!("Copying ({} bytes)", block_comp_len);
+                decompressed_data[decompressed_pos as usize..decompressed_pos + block_decomp_len]
+                    .copy_from_slice(&compressed_buffer[..block_comp_len]);
+            } else {
+                debug!("Decompressing with lz4 ({} bytes)", block_comp_len);
+                decompress_lz(
+                    &compressed_buffer,
+                    block_comp_len,
+                    &mut decompressed_data[decompressed_pos as usize..],
+                    block_decomp_len,
+                )?;
+            }
+            debug!("Decompressed {} bytes", block_decomp_len);
+            decompressed_pos += block_decomp_len;
         }
-
-        let cache_offset = cache_reader.seek(SeekFrom::Current(0))? as usize;
-        let remaining_len = cache_len - cache_offset;
-        if block_comp_len > min_by(remaining_len, 0x40000, |a, b| a.cmp(b)) {
-            return Err(anyhow::anyhow!(
-                "Tried to read beyond limits, probably not a compressed file, \
-                compressed_len: {}, remaining_len: {}",
-                block_comp_len,
-                remaining_len
-            ));
-        }
-
-        let is_oodle = is_oodle_block(cache_reader)?;
-        cache_reader.read_exact(&mut compressed_buffer[..block_comp_len])?;
-
-        if is_oodle {
-            debug!("Decompressing with oodle ({} bytes)", block_comp_len);
-            decompress_oodle(
-                &compressed_buffer,
-                block_comp_len,
-                &mut decompressed_data[decompressed_pos as usize..],
-                block_decomp_len,
-            )?;
-        } else if block_comp_len == block_decomp_len {
-            debug!("Copying ({} bytes)", block_comp_len);
-            decompressed_data[decompressed_pos as usize..decompressed_pos + block_decomp_len]
-                .copy_from_slice(&compressed_buffer[..block_comp_len]);
-        } else {
-            debug!("Decompressing with lz4 ({} bytes)", block_comp_len);
-            decompress_lz(
-                &compressed_buffer,
-                block_comp_len,
-                &mut decompressed_data[decompressed_pos as usize..],
-                block_decomp_len,
-            )?;
-        }
-        debug!("Decompressed {} bytes", block_decomp_len);
-        decompressed_pos += block_decomp_len;
-    }
+        Ok(())
+    })?;
 
     Ok(decompressed_data)
 }

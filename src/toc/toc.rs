@@ -60,6 +60,11 @@ impl Toc {
         let mut dir_count = 1; // Hardcoded root directory
 
         self.directories.insert(0, Node::root());
+        self.node_lookup
+            .insert("/".to_string(), self.directories[0].clone());
+
+        let mut dir_paths: Vec<String> = Vec::with_capacity(entry_count);
+        dir_paths.push("".to_string()); // root path is empty
 
         let mut buffer = vec![0u8; TOC_ENTRY_SIZE * entry_count];
         toc_reader.read_exact(&mut buffer).unwrap();
@@ -85,12 +90,19 @@ impl Toc {
                 .get_mut(entry.parent_dir_index as usize)
                 .unwrap();
 
+            let parent_path = &dir_paths[entry.parent_dir_index as usize];
+            let entry_name_norm = entry_name.replace('\\', "/");
+            let norm_path = format!("{}/{}", parent_path, entry_name_norm).to_lowercase();
+
             // If the cache offset is -1, then the entry is a directory
             if entry.cache_offset == -1 {
                 let dir_node = Node::directory(entry_name);
 
                 parent_node.append(dir_node.clone());
-                self.directories.insert(dir_count, dir_node);
+                self.directories.insert(dir_count, dir_node.clone());
+                dir_paths.insert(dir_count, format!("{}/{}", parent_path, entry_name_norm));
+
+                self.node_lookup.insert(norm_path, dir_node);
 
                 dir_count += 1;
             } else {
@@ -103,7 +115,9 @@ impl Toc {
                 );
 
                 parent_node.append(file_node.clone());
-                self.files.insert(file_count, file_node);
+                self.files.insert(file_count, file_node.clone());
+
+                self.node_lookup.insert(norm_path, file_node);
 
                 file_count += 1;
             }
@@ -112,24 +126,6 @@ impl Toc {
         // Shrink the vectors to the actual size of the vectors to save memory
         self.directories.shrink_to_fit();
         self.files.shrink_to_fit();
-
-        // Build the lookup map
-        for node in &self.files {
-            let path_norm = node
-                .path()
-                .to_string_lossy()
-                .replace('\\', "/")
-                .to_lowercase();
-            self.node_lookup.insert(path_norm, node.clone());
-        }
-        for node in &self.directories {
-            let path_norm = node
-                .path()
-                .to_string_lossy()
-                .replace('\\', "/")
-                .to_lowercase();
-            self.node_lookup.insert(path_norm, node.clone());
-        }
 
         Ok(()) // TOC read successfully
     }

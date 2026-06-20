@@ -99,8 +99,12 @@ fn decompress_custom_lz(
         }
 
         let start = decomp_dist_begin_pos as usize;
-        for i in 0..copy_length {
-            result[decomp_pos + i] = result[start + i];
+        if start + copy_length <= decomp_pos {
+            result.copy_within(start..start + copy_length, decomp_pos);
+        } else {
+            for i in 0..copy_length {
+                result[decomp_pos + i] = result[start + i];
+            }
         }
         decomp_pos += copy_length;
     }

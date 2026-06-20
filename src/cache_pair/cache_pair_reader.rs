@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::Result;
 
@@ -15,6 +16,7 @@ pub struct CachePairReader {
     toc_path: PathBuf,
     cache_path: PathBuf,
     toc: Toc,
+    cache_file: Mutex<Option<File>>,
 }
 
 impl CachePair for CachePairReader {
@@ -25,6 +27,7 @@ impl CachePair for CachePairReader {
             toc_path,
             cache_path,
             toc,
+            cache_file: Mutex::new(None),
         }
     }
 
@@ -72,13 +75,15 @@ impl CachePairReader {
 
     /// Read the data without decompressing it for the given file node.
     pub fn get_data(&self, file_node: Node) -> Result<Vec<u8>> {
-        let mut cache_reader = File::open(self.cache_path.clone()).unwrap();
-        cache_reader
-            .seek(SeekFrom::Start(file_node.cache_offset() as u64))
-            .unwrap();
+        let mut guard = self.cache_file.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(File::open(&self.cache_path)?);
+        }
+        let cache_reader = guard.as_mut().unwrap();
+        cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
 
         let mut data = vec![0; file_node.comp_len() as usize];
-        cache_reader.read_exact(&mut data).unwrap();
+        cache_reader.read_exact(&mut data)?;
         Ok(data)
     }
 
@@ -90,20 +95,24 @@ impl CachePairReader {
             return self.get_data(file_node);
         }
 
-        let mut cache_reader = File::open(self.cache_path.clone()).unwrap();
+        let mut guard = self.cache_file.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(File::open(&self.cache_path)?);
+        }
+        let cache_reader = guard.as_mut().unwrap();
         cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
 
         if self.is_post_ensmallening {
             return decompress_post_ensmallening(
                 file_node.comp_len() as usize,
                 file_node.len() as usize,
-                &mut cache_reader,
+                cache_reader,
             );
         } else {
             return decompress_pre_ensmallening(
                 file_node.comp_len() as usize,
                 file_node.len() as usize,
-                &mut cache_reader,
+                cache_reader,
             );
         }
     }

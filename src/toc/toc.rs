@@ -1,17 +1,19 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Component, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use zerocopy::FromBytes;
 
-use crate::toc::node::{DirectoryNode, Node, NodeKind};
+use crate::toc::node::{Node, NodeKind};
 use crate::toc::toc_entry::{TocEntry, TOC_ENTRY_SIZE};
 
 pub(crate) struct Toc {
     toc_path: PathBuf,
     directories: Vec<Node>,
     files: Vec<Node>,
+    node_lookup: HashMap<String, Node>,
 }
 
 impl Toc {
@@ -20,6 +22,7 @@ impl Toc {
             toc_path,
             directories: Vec::new(),
             files: Vec::new(),
+            node_lookup: HashMap::new(),
         }
     }
 
@@ -29,10 +32,6 @@ impl Toc {
 
     pub fn files(&self) -> &Vec<Node> {
         &self.files
-    }
-
-    pub fn root(&self) -> Option<Node> {
-        self.directories.get(0).cloned()
     }
 
     pub fn is_loaded(&self) -> bool {
@@ -114,12 +113,31 @@ impl Toc {
         self.directories.shrink_to_fit();
         self.files.shrink_to_fit();
 
+        // Build the lookup map
+        for node in &self.files {
+            let path_norm = node
+                .path()
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_lowercase();
+            self.node_lookup.insert(path_norm, node.clone());
+        }
+        for node in &self.directories {
+            let path_norm = node
+                .path()
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_lowercase();
+            self.node_lookup.insert(path_norm, node.clone());
+        }
+
         Ok(()) // TOC read successfully
     }
 
     pub fn unread_toc(&mut self) {
         self.directories.clear();
         self.files.clear();
+        self.node_lookup.clear();
     }
 
     fn get_node(&self, path: PathBuf) -> Option<Node> {
@@ -131,33 +149,8 @@ impl Toc {
             panic!("Path must be absolute");
         }
 
-        let mut components = path.components();
-        let mut current_node = self.root().unwrap().clone();
-
-        // Skip root
-        components.next();
-
-        for component in components {
-            match component {
-                Component::Normal(name) => {
-                    let name = name.to_str().unwrap();
-                    current_node = match current_node.get_child(name) {
-                        Some(child) => child,
-                        _ => return None,
-                    };
-                }
-                Component::ParentDir => {
-                    current_node = match current_node.parent() {
-                        Some(parent) => parent,
-                        _ => return None,
-                    };
-                }
-                Component::CurDir => continue,
-                _ => return None,
-            }
-        }
-
-        Some(current_node)
+        let path_norm = path.to_string_lossy().replace('\\', "/").to_lowercase();
+        self.node_lookup.get(&path_norm).cloned()
     }
 
     pub fn get_directory_node(&self, path: PathBuf) -> Option<Node> {

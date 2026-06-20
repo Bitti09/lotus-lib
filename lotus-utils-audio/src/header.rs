@@ -5,20 +5,31 @@ use crate::ogg::{get_segment_table, OggPage};
 use crate::opus::{OpusHead, OpusTags};
 use crate::raw_header::RawAudioHeader;
 
+/// Represents a parsed audio header containing file format, channels, and sizes.
 #[derive(Debug)]
 pub struct AudioHeader {
+    /// The compression format of the audio file.
     pub format_tag: CompressionFormat,
+    /// Random or serial stream number (primarily for Opus/Ogg).
     pub stream_serial_number: u32,
+    /// Number of audio samples per second (sample rate).
     pub samples_per_second: u32,
+    /// Bit depth of each audio sample.
     pub bits_per_sample: u8,
+    /// Number of audio channels.
     pub channels: u8,
+    /// Average bytes per second of the audio stream.
     pub average_bytes_per_second: u32,
+    /// Block alignment boundary size.
     pub block_align: u16,
+    /// Number of samples per block.
     pub samples_per_block: u16,
+    /// Size of the raw compressed audio stream.
     pub size: u32,
 }
 
 impl AudioHeader {
+    /// Converts this header to a standard WAVE PCM file header.
     pub fn to_wav_pcm(&self) -> Result<Vec<u8>> {
         let block_align = (self.channels * self.bits_per_sample) as u16 >> 3;
         let average_bytes_per_second = self.samples_per_second * block_align as u32;
@@ -42,6 +53,7 @@ impl AudioHeader {
         Ok(data)
     }
 
+    /// Converts this header to a standard WAVE MS-ADPCM file header.
     pub fn to_wav_adpcm(&self) -> Result<Vec<u8>> {
         let mut data = Vec::with_capacity(78);
 
@@ -79,6 +91,36 @@ impl AudioHeader {
         Ok(data)
     }
 
+    /// Wraps the raw compressed audio stream in a RIFF xWMA container.
+    pub fn to_wav_xwma(&self, raw_audio: &[u8]) -> Result<Vec<u8>> {
+        let mut fmt_chunk = Vec::with_capacity(18);
+        fmt_chunk.extend_from_slice(&0x0161u16.to_le_bytes()); // Format tag: WMAv2 (0x0161)
+        fmt_chunk.extend_from_slice(&(self.channels as u16).to_le_bytes());
+        fmt_chunk.extend_from_slice(&self.samples_per_second.to_le_bytes());
+        fmt_chunk.extend_from_slice(&self.average_bytes_per_second.to_le_bytes());
+        fmt_chunk.extend_from_slice(&self.block_align.to_le_bytes());
+        fmt_chunk.extend_from_slice(&(self.bits_per_sample as u16).to_le_bytes());
+        fmt_chunk.extend_from_slice(&0u16.to_le_bytes()); // cbSize = 0
+
+        let riff_size = 4 + 8 + fmt_chunk.len() + 8 + raw_audio.len();
+
+        let mut data = Vec::with_capacity(12 + 8 + fmt_chunk.len() + 8 + raw_audio.len());
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&(riff_size as u32).to_le_bytes());
+        data.extend_from_slice(b"XWMA");
+
+        data.extend_from_slice(b"fmt ");
+        data.extend_from_slice(&(fmt_chunk.len() as u32).to_le_bytes());
+        data.extend_from_slice(&fmt_chunk);
+
+        data.extend_from_slice(b"data");
+        data.extend_from_slice(&(raw_audio.len() as u32).to_le_bytes());
+        data.extend_from_slice(raw_audio);
+
+        Ok(data)
+    }
+
+    /// Converts this header to an Ogg Opus stream header structure.
     pub fn to_opus(self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
 
@@ -120,8 +162,13 @@ impl TryFrom<&[u8]> for AudioHeader {
     fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
         let raw_header = RawAudioHeader::try_from(data)?;
 
+        let mut format_tag = CompressionFormat::try_from(raw_header.format_tag)?;
+        if format_tag == CompressionFormat::PCM && raw_header.block_align > 16 {
+            format_tag = CompressionFormat::XWMA;
+        }
+
         Ok(AudioHeader {
-            format_tag: CompressionFormat::try_from(raw_header.format_tag)?,
+            format_tag,
             stream_serial_number: rand::random::<u32>(),
             samples_per_second: raw_header.samples_per_second,
             bits_per_sample: raw_header.bits_per_sample,

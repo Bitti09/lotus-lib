@@ -1,24 +1,44 @@
 use anyhow::Error;
 use zerocopy::{ByteOrder, LittleEndian};
 
+/// Represents the raw parsed binary audio header read from a Warframe cache metadata node.
+#[allow(dead_code)]
 pub struct RawAudioHeader<'a> {
+    /// Unique hash identifying the audio asset.
     pub hash: &'a [u8; 16],
+    /// Number of merged/sub-files referenced by this header.
     pub merged_file_count: u32,
+    /// Paths of the merged/sub-files.
     pub file_paths: Vec<&'a str>,
+    /// Length of the arguments string.
     pub arguments_length: u32,
-    pub arguments: &'a str, // TODO: Parse the arguments
+    /// Arguments string passed for configuration.
+    pub arguments: &'a str,
+    /// File type indicator (e.g., 0x87 for early audio).
     pub file_type: u32,
+    /// Format tag identifying the audio format (e.g. PCM, ADPCM, xWMA).
     pub format_tag: u32,
+    /// Unknown metadata field 1.
     pub unknown1: u32,
-    pub unknown2: &'a [u8; 24],
+    /// Unknown metadata segment 2.
+    pub unknown2: &'a [u8],
+    /// Number of audio samples per second (sample rate).
     pub samples_per_second: u32,
+    /// Bit depth of each audio sample.
     pub bits_per_sample: u8,
+    /// Number of audio channels.
     pub channels: u8,
+    /// Unknown metadata field 3.
     pub unknown3: u32,
+    /// Average bytes per second of the audio stream.
     pub average_bytes_per_second: u32,
+    /// Block alignment size.
     pub block_align: u16,
+    /// Number of samples per block.
     pub samples_per_block: u16,
+    /// Unknown metadata field 4.
     pub unknown4: &'a [u8; 12],
+    /// Size of the raw compressed audio stream.
     pub size: u32,
 }
 
@@ -60,8 +80,10 @@ impl<'a> TryFrom<&'a [u8]> for RawAudioHeader<'a> {
         let unknown1 = LittleEndian::read_u32(&data[offset..offset + 4]);
         offset += 4;
 
-        let unknown2 = &data[offset..offset + 24];
-        offset += 24;
+        // Check if we have the early format where unknown2 is 28 bytes
+        let unknown2_len = if file_type == 0x87 { 28 } else { 24 };
+        let unknown2 = &data[offset..offset + unknown2_len];
+        offset += unknown2_len;
 
         let samples_per_second = LittleEndian::read_u32(&data[offset..offset + 4]);
         offset += 4;
@@ -96,7 +118,7 @@ impl<'a> TryFrom<&'a [u8]> for RawAudioHeader<'a> {
             file_type,
             format_tag,
             unknown1,
-            unknown2: unknown2.try_into()?,
+            unknown2,
             samples_per_second,
             bits_per_sample,
             channels,

@@ -1,24 +1,47 @@
 [package]
+edition = "2021"
 name = "lotus-utils-audio"
 version = "0.2.1"
-edition = "2021"
 authors = ["Youn Mélois <youn@melois.dev>"]
-repository = "https://github.com/sehnryr/lotus-lib"
-homepage = "https://github.com/sehnryr/lotus-lib"
-description = "Utilities for lotus-lib audio handling."
-license = "MIT"
-keywords = ["warframe", "cache", "decompression", "utils", "audio"]
-categories = ["encoding", "filesystem", "parsing"]
 exclude = [".*"]
+description = "Utilities for lotus-lib audio handling."
+homepage = "https://github.com/sehnryr/lotus-lib"
+keywords = [
+    "warframe",
+    "cache",
+    "decompression",
+    "utils",
+    "audio",
+]
+categories = [
+    "encoding",
+    "filesystem",
+    "parsing",
+]
+license = "MIT"
+repository = "https://github.com/sehnryr/lotus-lib"
 
-[lints]
-workspace = true
+[dependencies.anyhow]
+version = "1.0.79"
 
-[dependencies]
-anyhow = "1.0.79"
-bytebuffer = "2.2.0"
-crc = "3.0.1"
-log = "0.4.20"
-lotus-lib = { path = "../", version = "4.0.1" }
-rand = "0.8.5"
-zerocopy = "0.7.32"
+[dependencies.bytebuffer]
+version = "2.2.0"
+
+[dependencies.crc]
+version = "3.0.1"
+
+[dependencies.log]
+version = "0.4.20"
+
+[dependencies.lotus-lib]
+version = "4.0.1"
+
+[dependencies.rand]
+version = "0.8.5"
+
+[dependencies.zerocopy]
+version = "0.7.32"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

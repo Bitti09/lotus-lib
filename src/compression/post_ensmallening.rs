@@ -8,6 +8,7 @@ use log::debug;
 use crate::compression::lz::decompress_lz;
 use crate::compression::oodle::decompress_oodle;
 
+/// Decompresses data from a post-ensmallening cache block structure.
 pub fn decompress_post_ensmallening(
     compressed_len: usize,
     decompressed_len: usize,
@@ -79,6 +80,7 @@ pub fn decompress_post_ensmallening(
     Ok(decompressed_data)
 }
 
+/// Checks if the next block in the cache reader is an Oodle block.
 pub fn is_oodle_block(cache_reader: &mut File) -> Result<bool> {
     let mut check_magic = [0u8; 1];
     cache_reader.by_ref().read_exact(&mut check_magic)?;
@@ -86,6 +88,7 @@ pub fn is_oodle_block(cache_reader: &mut File) -> Result<bool> {
     Ok(check_magic[0] == 0x8C)
 }
 
+/// Reads the block header and returns the compressed and decompressed lengths of the block.
 pub fn get_block_lengths(cache_reader: &mut File) -> Result<Option<(usize, usize)>> {
     let mut block_info = [0u8; 8];
     cache_reader.read_exact(&mut block_info)?;

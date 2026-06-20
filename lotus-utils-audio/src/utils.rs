@@ -11,6 +11,7 @@ use crate::kind::AudioKind;
 use crate::ogg::{get_segment_table, OggPage};
 use crate::raw_header::RawAudioHeader;
 
+/// Extension trait providing methods to inspect and decompress audio nodes from cache packages.
 pub trait Audio {
     /// Checks if the given node is an audio file.
     ///
@@ -72,7 +73,7 @@ impl Audio for Package<CachePairReader> {
         debug!("Header: {:?}", header);
 
         match header.format_tag {
-            CompressionFormat::PCM | CompressionFormat::ADPCM => {
+            CompressionFormat::PCM | CompressionFormat::ADPCM | CompressionFormat::XWMA => {
                 // Get the file data
                 let f_cache = f_cache.unwrap();
                 let b_cache = b_cache.unwrap();
@@ -117,15 +118,22 @@ impl Audio for Package<CachePairReader> {
                 match header.format_tag {
                     CompressionFormat::PCM => buffer.write_bytes(&header.to_wav_pcm()?),
                     CompressionFormat::ADPCM => buffer.write_bytes(&header.to_wav_adpcm()?),
+                    CompressionFormat::XWMA => buffer.write_bytes(&header.to_wav_xwma(file_data)?),
                     _ => return Err(Error::msg("Error extracting audio file")),
                 }
 
-                buffer.write_bytes(file_data);
+                if header.format_tag != CompressionFormat::XWMA {
+                    buffer.write_bytes(file_data);
+                }
 
                 let file_name = {
                     let file_name = node.name();
                     let file_name = file_name.rsplit_once('.').unwrap_or((&file_name, "")).0;
-                    format!("{}.wav", file_name)
+                    if header.format_tag == CompressionFormat::XWMA {
+                        format!("{}.xwma", file_name)
+                    } else {
+                        format!("{}.wav", file_name)
+                    }
                 };
 
                 Ok((buffer.as_bytes().to_vec(), file_name))

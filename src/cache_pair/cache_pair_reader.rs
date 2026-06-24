@@ -1,7 +1,28 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+thread_local! {
+    static FILE_CACHE: RefCell<HashMap<PathBuf, File>> = RefCell::new(HashMap::new());
+}
+
+fn with_cache_file<F, R>(path: &PathBuf, f: F) -> Result<R>
+where
+    F: FnOnce(&mut File) -> Result<R>,
+{
+    FILE_CACHE.with(|cache| {
+        let mut map = cache.borrow_mut();
+        if !map.contains_key(path) {
+            let file = File::open(path)?;
+            map.insert(path.clone(), file);
+        }
+        let file = map.get_mut(path).unwrap();
+        f(file)
+    })
+}
 
 use anyhow::Result;
 
@@ -16,6 +37,7 @@ pub struct CachePairReader {
     toc_path: PathBuf,
     cache_path: PathBuf,
     toc: Toc,
+    #[allow(dead_code)]
     cache_file: Mutex<Option<File>>,
     cache_size: u64,
 }
@@ -96,16 +118,12 @@ impl CachePairReader {
 
     /// Read the data without decompressing it for the given file node.
     pub fn get_data(&self, file_node: Node) -> Result<Vec<u8>> {
-        let mut guard = self.cache_file.lock().unwrap();
-        if guard.is_none() {
-            *guard = Some(File::open(&self.cache_path)?);
-        }
-        let cache_reader = guard.as_mut().unwrap();
-        cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
-
-        let mut data = vec![0; file_node.comp_len() as usize];
-        cache_reader.read_exact(&mut data)?;
-        Ok(data)
+        with_cache_file(&self.cache_path, |cache_reader| {
+            cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
+            let mut data = vec![0; file_node.comp_len() as usize];
+            cache_reader.read_exact(&mut data)?;
+            Ok(data)
+        })
     }
 
     /// Read and decompress the data for the given file node.
@@ -116,25 +134,22 @@ impl CachePairReader {
             return self.get_data(file_node);
         }
 
-        let mut guard = self.cache_file.lock().unwrap();
-        if guard.is_none() {
-            *guard = Some(File::open(&self.cache_path)?);
-        }
-        let cache_reader = guard.as_mut().unwrap();
-        cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
+        with_cache_file(&self.cache_path, |cache_reader| {
+            cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
 
-        if self.is_post_ensmallening {
-            return decompress_post_ensmallening(
-                file_node.comp_len() as usize,
-                file_node.len() as usize,
-                cache_reader,
-            );
-        } else {
-            return decompress_pre_ensmallening(
-                file_node.comp_len() as usize,
-                file_node.len() as usize,
-                cache_reader,
-            );
-        }
+            if self.is_post_ensmallening {
+                decompress_post_ensmallening(
+                    file_node.comp_len() as usize,
+                    file_node.len() as usize,
+                    cache_reader,
+                )
+            } else {
+                decompress_pre_ensmallening(
+                    file_node.comp_len() as usize,
+                    file_node.len() as usize,
+                    cache_reader,
+                )
+            }
+        })
     }
 }

@@ -63,6 +63,7 @@ pub trait DirectoryNode {
 impl Node {
     fn new(
         name: &str,
+        path: PathBuf,
         kind: NodeKind,
         cache_offset: Option<i64>,
         timestamp: Option<i64>,
@@ -72,6 +73,7 @@ impl Node {
         Self {
             node: ArcNode::new(NodeData::new(
                 name,
+                path,
                 kind,
                 cache_offset,
                 timestamp,
@@ -82,11 +84,12 @@ impl Node {
     }
 
     pub(super) fn root() -> Self {
-        Self::directory("")
+        Self::new("", PathBuf::from("/"), NodeKind::Directory, None, None, None, None)
     }
 
     pub(super) fn file(
         name: &str,
+        path: PathBuf,
         cache_offset: i64,
         timestamp: i64,
         comp_len: i32,
@@ -94,6 +97,7 @@ impl Node {
     ) -> Self {
         Self::new(
             name,
+            path,
             NodeKind::File,
             Some(cache_offset),
             Some(timestamp),
@@ -102,8 +106,8 @@ impl Node {
         )
     }
 
-    pub(super) fn directory(name: &str) -> Self {
-        Self::new(name, NodeKind::Directory, None, None, None, None)
+    pub(super) fn directory(name: &str, path: PathBuf) -> Self {
+        Self::new(name, path, NodeKind::Directory, None, None, None, None)
     }
 
     pub(super) fn append(&mut self, child: Node) {
@@ -117,21 +121,7 @@ impl Node {
 
     /// Returns the path of the node.
     pub fn path(&self) -> PathBuf {
-        let mut ancestors = Vec::new();
-        let mut ancestor = self.node.parent();
-        while let Some(current_ancestor) = ancestor {
-            ancestors.push(current_ancestor.clone());
-            ancestor = current_ancestor.parent();
-        }
-
-        let mut path = PathBuf::from("/");
-        for ancestor in ancestors.iter().rev() {
-            path.push(ancestor.read().name());
-        }
-
-        path.push(self.name());
-
-        path
+        self.node.read().path.clone()
     }
 
     /// Returns the kind of the node.
@@ -186,6 +176,7 @@ impl DirectoryNode for Node {
 #[derive(Debug)]
 struct NodeData {
     name: String,
+    path: PathBuf,
     kind: NodeKind,
     cache_offset: Option<i64>,
     timestamp: Option<i64>,
@@ -196,6 +187,7 @@ struct NodeData {
 impl NodeData {
     fn new(
         name: &str,
+        path: PathBuf,
         kind: NodeKind,
         cache_offset: Option<i64>,
         timestamp: Option<i64>,
@@ -204,6 +196,7 @@ impl NodeData {
     ) -> Self {
         Self {
             name: String::from(name),
+            path,
             kind,
             cache_offset,
             timestamp,

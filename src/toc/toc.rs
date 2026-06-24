@@ -56,6 +56,14 @@ impl Toc {
         self.files.reserve(entry_count);
         self.directories.reserve(entry_count);
 
+        let resurrect = std::env::args().any(|arg| {
+            arg == "--resurrect" || arg == "-resurrect"
+                || arg == "--resurrect-deleted" || arg == "-resurrect-deleted"
+                || arg == "--resurectdeleted" || arg == "-resurectdeleted"
+                || arg == "--resurrect-modified" || arg == "-resurrect-modified"
+                || arg == "--resurectmodified" || arg == "-resurectmodified"
+        }) || std::env::var("RESURRECT").is_ok();
+
         let mut file_count = 0;
         let mut dir_count = 1; // Hardcoded root directory
 
@@ -73,17 +81,26 @@ impl Toc {
         for entry in entries {
             // Entry timestamp of 0 means the entry has been replaced with a
             // newer version with the same name and path with a valid timestamp
-            if entry.timestamp == 0 {
+            if entry.timestamp == 0 && !resurrect {
                 continue;
             }
 
             // Entry name is a null-terminated string, so we need to find the
             // index of the null byte and truncate the string there
-            let entry_name = {
+            let mut entry_name_owned = {
                 let null_index = entry.name.iter().position(|&x| x == 0).unwrap_or(64);
                 let entry_name = std::str::from_utf8(&entry.name[..null_index])?;
-                entry_name
+                entry_name.to_string()
             };
+
+            if entry.timestamp == 0 {
+                // Append suffix to indicate deleted/old version and prevent collision
+                if let Some(pos) = entry_name_owned.rfind('.') {
+                    entry_name_owned.insert_str(pos, ".deleted");
+                } else {
+                    entry_name_owned.push_str(".deleted");
+                }
+            }
 
             let parent_node = self
                 .directories
@@ -91,12 +108,13 @@ impl Toc {
                 .unwrap();
 
             let parent_path = &dir_paths[entry.parent_dir_index as usize];
-            let entry_name_norm = entry_name.replace('\\', "/");
+            let entry_name_norm = entry_name_owned.replace('\\', "/");
             let norm_path = format!("{}/{}", parent_path, entry_name_norm).to_lowercase();
+            let full_path = PathBuf::from(format!("{}/{}", parent_path, entry_name_norm));
 
             // If the cache offset is -1, then the entry is a directory
             if entry.cache_offset == -1 {
-                let dir_node = Node::directory(entry_name);
+                let dir_node = Node::directory(&entry_name_owned, full_path);
 
                 parent_node.append(dir_node.clone());
                 self.directories.insert(dir_count, dir_node.clone());
@@ -107,7 +125,8 @@ impl Toc {
                 dir_count += 1;
             } else {
                 let file_node = Node::file(
-                    entry_name,
+                    &entry_name_owned,
+                    full_path,
                     entry.cache_offset,
                     entry.timestamp,
                     entry.comp_len,

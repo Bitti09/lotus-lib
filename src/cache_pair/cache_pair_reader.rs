@@ -47,7 +47,21 @@ impl CachePair for CachePairReader {
     }
 
     fn read_toc(&mut self) -> Result<()> {
-        self.toc.read_toc()
+        self.toc.read_toc()?;
+
+        // Auto-detect is_post_ensmallening based on the first compressed file
+        if let Some(first_compressed) = self.toc.files().iter().find(|node| node.comp_len() != node.len()) {
+            if let Ok(mut file) = File::open(&self.cache_path) {
+                if file.seek(SeekFrom::Start(first_compressed.cache_offset() as u64)).is_ok() {
+                    let mut header = [0u8; 8];
+                    if file.read_exact(&mut header).is_ok() {
+                        self.is_post_ensmallening = header[0] == 0x80 && (header[7] & 0x0F) == 0x1;
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn unread_toc(&mut self) {

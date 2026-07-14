@@ -2,8 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
 
 thread_local! {
     static FILE_CACHE: RefCell<HashMap<PathBuf, File>> = RefCell::new(HashMap::new());
@@ -37,8 +36,6 @@ pub struct CachePairReader {
     toc_path: PathBuf,
     cache_path: PathBuf,
     toc: Toc,
-    #[allow(dead_code)]
-    cache_file: Mutex<Option<File>>,
     cache_size: u64,
 }
 
@@ -51,7 +48,6 @@ impl CachePair for CachePairReader {
             toc_path,
             cache_path,
             toc,
-            cache_file: Mutex::new(None),
             cache_size,
         }
     }
@@ -60,12 +56,12 @@ impl CachePair for CachePairReader {
         self.is_post_ensmallening
     }
 
-    fn toc_path(&self) -> PathBuf {
-        self.toc_path.clone()
+    fn toc_path(&self) -> &Path {
+        &self.toc_path
     }
 
-    fn cache_path(&self) -> PathBuf {
-        self.cache_path.clone()
+    fn cache_path(&self) -> &Path {
+        &self.cache_path
     }
 
     fn read_toc(&mut self) -> Result<()> {
@@ -87,7 +83,8 @@ impl CachePair for CachePairReader {
     }
 
     fn unread_toc(&mut self) {
-        self.toc.unread_toc()
+        self.toc.unread_toc();
+        FILE_CACHE.with(|cache| cache.borrow_mut().clear());
     }
 
     fn cache_size(&self) -> u64 {
@@ -96,29 +93,29 @@ impl CachePair for CachePairReader {
 }
 
 impl CachePairReader {
-    /// Get the directory node for the given path.
-    pub fn get_directory_node<T: Into<PathBuf>>(&self, path: T) -> Option<Node> {
-        self.toc.get_directory_node(path.into())
+    /// Look up a directory by path (case-insensitive).
+    pub fn get_directory_node(&self, path: &str) -> Option<Node> {
+        self.toc.get_directory_node(path)
     }
 
-    /// Get the file node for the given path.
-    pub fn get_file_node<T: Into<PathBuf>>(&self, path: T) -> Option<Node> {
-        self.toc.get_file_node(path.into())
+    /// Look up a file by path (case-insensitive).
+    pub fn get_file_node(&self, path: &str) -> Option<Node> {
+        self.toc.get_file_node(path)
     }
 
-    /// Get the directory nodes
-    pub fn directories(&self) -> &Vec<Node> {
+    /// All directory nodes.
+    pub fn directories(&self) -> &[Node] {
         self.toc.directories()
     }
 
     /// Get the file nodes
-    pub fn files(&self) -> &Vec<Node> {
+    pub fn files(&self) -> &[Node] {
         self.toc.files()
     }
 
     /// Read the data without decompressing it for the given file node.
     pub fn get_data(&self, file_node: Node) -> Result<Vec<u8>> {
-        with_cache_file(&self.cache_path, |cache_reader| {
+        with_cache_file(&self.cache_path.to_path_buf(), |cache_reader| {
             cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
             let mut data = vec![0; file_node.comp_len() as usize];
             cache_reader.read_exact(&mut data)?;
@@ -134,7 +131,7 @@ impl CachePairReader {
             return self.get_data(file_node);
         }
 
-        with_cache_file(&self.cache_path, |cache_reader| {
+        with_cache_file(&self.cache_path.to_path_buf(), |cache_reader| {
             cache_reader.seek(SeekFrom::Start(file_node.cache_offset() as u64))?;
 
             if self.is_post_ensmallening {

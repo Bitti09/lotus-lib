@@ -1,14 +1,18 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 
 use crate::cache_pair::CachePair;
 use crate::package::package::Package;
 
+/// Supported localization suffixes.
+pub const LOCALIZATION_SUFFIXES: &[&str] = &["_en", "_de", "_fr", "_it", "_es", "_ja", "_ko", "_pl", "_pt", "_ru", "_tr", "_uk", "_zh", "_xx"];
+
 /// A collection of packages.
 pub struct PackageCollection<T: CachePair> {
     directory: PathBuf,
     is_post_ensmallening: bool,
-    packages: Vec<Package<T>>,
+    packages: HashMap<String, Package<T>>,
 }
 
 impl<T: CachePair> PackageCollection<T> {
@@ -23,7 +27,7 @@ impl<T: CachePair> PackageCollection<T> {
     {
         let directory = directory.into();
 
-        let mut packages = Vec::new();
+        let mut packages = HashMap::new();
         for entry in std::fs::read_dir(&directory).unwrap() {
             let entry = entry?;
             let file_name = entry.file_name().into_string().unwrap();
@@ -41,8 +45,8 @@ impl<T: CachePair> PackageCollection<T> {
 
             let package_name = file_name[2..file_name.len() - 4].to_string();
 
-            let package = Package::<T>::new(&directory, package_name, is_post_ensmallening);
-            packages.push(package);
+            let package = Package::<T>::new(&directory, package_name.clone(), is_post_ensmallening);
+            packages.insert(package_name, package);
         }
 
         Ok(Self {
@@ -62,25 +66,17 @@ impl<T: CachePair> PackageCollection<T> {
 
     /// Returns a reference to the package with the specified name if found.
     pub fn borrow(&self, package_name: &str) -> Option<&Package<T>> {
-        self.packages
-            .iter()
-            .find(|package| package.name() == package_name)
+        self.packages.get(package_name)
     }
 
     /// Returns a mutable reference to the package with the specified name if found.
     pub fn borrow_mut(&mut self, package_name: &str) -> Option<&mut Package<T>> {
-        self.packages
-            .iter_mut()
-            .find(|package| package.name() == package_name)
+        self.packages.get_mut(package_name)
     }
 
     /// Returns the package with the specified name if found.
     pub fn take(&mut self, package_name: &str) -> Option<Package<T>> {
-        let index = self
-            .packages
-            .iter()
-            .position(|package| package.name() == package_name)?;
-        Some(self.packages.remove(index))
+        self.packages.remove(package_name)
     }
 
     /// Returns the directory of the package collection.
@@ -89,7 +85,44 @@ impl<T: CachePair> PackageCollection<T> {
     }
 
     /// Returns the packages within the package collection.
-    pub fn packages(&self) -> &Vec<Package<T>> {
+    pub fn packages(&self) -> &HashMap<String, Package<T>> {
         &self.packages
+    }
+
+    /// Check if a package name has a localization suffix.
+    pub fn is_localized_package(package_name: &str) -> bool {
+        LOCALIZATION_SUFFIXES.iter().any(|suffix| package_name.ends_with(suffix))
+    }
+
+    /// Get the base package name without localization suffix.
+    pub fn get_base_package_name(package_name: &str) -> &str {
+        for suffix in LOCALIZATION_SUFFIXES {
+            if let Some(stripped) = package_name.strip_suffix(suffix) {
+                return stripped;
+            }
+        }
+        package_name
+    }
+
+    /// Get all localization variants for a base package name.
+    pub fn get_localization_variants<'a>(&'a self, base_name: &'a str) -> Vec<(&'a str, &'a Package<T>)> {
+        let mut variants = Vec::new();
+
+        if let Some(pkg) = self.packages.get(base_name) {
+            variants.push((base_name, pkg));
+        }
+
+        for suffix in LOCALIZATION_SUFFIXES {
+            let localized_key = self.packages.keys().find(|k| {
+                k.as_str() == format!("{}{}", base_name, suffix).as_str()
+            });
+            if let Some(key) = localized_key {
+                if let Some(pkg) = self.packages.get(key.as_str()) {
+                    variants.push((key.as_str(), pkg));
+                }
+            }
+        }
+
+        variants
     }
 }

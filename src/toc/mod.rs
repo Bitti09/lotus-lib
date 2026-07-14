@@ -11,8 +11,10 @@ information about a directory, such as its children and a child with a given nam
 */
 
 mod node;
+mod statistics;
 mod toc;
 mod toc_entry;
 
 pub use node::{DirectoryNode, FileNode, Node, NodeKind};
+pub use statistics::{SizeDistribution, TocStatistics};
 pub(crate) use toc::Toc;

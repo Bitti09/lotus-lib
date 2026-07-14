@@ -20,6 +20,8 @@ by [Puxtril](https://github.com/Puxtril). The original library is written in C++
 
 */
 
+#![allow(clippy::module_inception)]
+
 pub mod cache_pair;
 pub mod compression;
 pub mod package;

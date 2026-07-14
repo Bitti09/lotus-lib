@@ -10,7 +10,7 @@ pub fn decompress_pre_ensmallening(
     cache_reader: &mut File,
 ) -> Result<Vec<u8>> {
     let mut compressed_data = vec![0u8; compressed_len];
-    cache_reader.read_exact(&mut compressed_data).unwrap();
+    cache_reader.read_exact(&mut compressed_data)?;
 
     let mut decompressed_data = Vec::with_capacity(decompressed_len);
     let mut pos = 0;

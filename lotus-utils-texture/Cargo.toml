@@ -11,8 +11,9 @@ keywords = ["warframe", "cache", "decompression", "utils", "texture"]
 categories = ["encoding", "filesystem", "parsing"]
 exclude = [".*"]
 
-[lints]
-workspace = true
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
 
 [dependencies]
 anyhow = "1.0.79"

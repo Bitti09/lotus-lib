@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::cmp::min_by;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -10,7 +9,18 @@ use crate::compression::lz::decompress_lz;
 use crate::compression::oodle::decompress_oodle;
 
 thread_local! {
-    static DECOMPRESS_BUFFER: RefCell<Vec<u8>> = RefCell::new(vec![0u8; 0x40000]);
+    static DECOMPRESS_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+}
+
+#[allow(dead_code)]
+const STANDARD_TEXTURE_BLOCK_SIZES: &[usize] = &[65_536, 262_144];
+
+/// Ensures the decompression buffer is at least the given capacity.
+/// Reuses the buffer across calls to avoid repeated allocations.
+fn ensure_buffer_capacity(buf: &mut Vec<u8>, required_len: usize) {
+    if buf.len() < required_len {
+        buf.resize(required_len, 0);
+    }
 }
 
 /// Decompresses data from a post-ensmallening cache block structure.
@@ -45,9 +55,9 @@ pub fn decompress_post_ensmallening(
                 ));
             }
 
-            let cache_offset = cache_reader.seek(SeekFrom::Current(0))? as usize;
+            let cache_offset = cache_reader.stream_position()? as usize;
             let remaining_len = cache_len - cache_offset;
-            if block_comp_len > min_by(remaining_len, 0x40000, |a, b| a.cmp(b)) {
+            if block_comp_len > remaining_len.min(0x40000) {
                 return Err(anyhow::anyhow!(
                     "Tried to read beyond limits, probably not a compressed file, \
                     compressed_len: {}, remaining_len: {}",
@@ -55,6 +65,9 @@ pub fn decompress_post_ensmallening(
                     remaining_len
                 ));
             }
+
+            // Ensure buffer is large enough for this block
+            ensure_buffer_capacity(&mut compressed_buffer, block_comp_len);
 
             let is_oodle = is_oodle_block(cache_reader)?;
             cache_reader.read_exact(&mut compressed_buffer[..block_comp_len])?;
@@ -64,19 +77,19 @@ pub fn decompress_post_ensmallening(
                 decompress_oodle(
                     &compressed_buffer,
                     block_comp_len,
-                    &mut decompressed_data[decompressed_pos as usize..],
+                    &mut decompressed_data[decompressed_pos..],
                     block_decomp_len,
                 )?;
             } else if block_comp_len == block_decomp_len {
                 debug!("Copying ({} bytes)", block_comp_len);
-                decompressed_data[decompressed_pos as usize..decompressed_pos + block_decomp_len]
+                decompressed_data[decompressed_pos..decompressed_pos + block_decomp_len]
                     .copy_from_slice(&compressed_buffer[..block_comp_len]);
             } else {
                 debug!("Decompressing with lz4 ({} bytes)", block_comp_len);
                 decompress_lz(
                     &compressed_buffer,
                     block_comp_len,
-                    &mut decompressed_data[decompressed_pos as usize..],
+                    &mut decompressed_data[decompressed_pos..],
                     block_decomp_len,
                 )?;
             }

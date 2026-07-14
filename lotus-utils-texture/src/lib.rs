@@ -1,3 +1,5 @@
+//! Texture parsing utilities for Warframe cache files (DDS header extraction, format detection).
+
 mod dds_format;
 mod header;
 mod kind;

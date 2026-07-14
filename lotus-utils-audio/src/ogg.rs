@@ -46,12 +46,9 @@ impl OggHeader {
             segment_table,
         }
     }
-}
 
-impl Into<Vec<u8>> for OggHeader {
-    fn into(self) -> Vec<u8> {
-        let mut data = Vec::new();
-
+    /// Serialize the header into the given buffer without extra allocations.
+    pub fn write_to(&self, data: &mut Vec<u8>) {
         data.extend_from_slice(&self.magic);
         data.push(self.version);
         data.push(self.header_type);
@@ -61,7 +58,13 @@ impl Into<Vec<u8>> for OggHeader {
         data.extend_from_slice(&self.checksum.to_le_bytes());
         data.push(self.page_segments);
         data.extend_from_slice(&self.segment_table);
+    }
+}
 
+impl Into<Vec<u8>> for OggHeader {
+    fn into(self) -> Vec<u8> {
+        let mut data = Vec::with_capacity(27 + self.segment_table.len());
+        self.write_to(&mut data);
         data
     }
 }
@@ -106,12 +109,16 @@ impl OggPage {
             segment_table,
         );
 
-        let mut data = Vec::new();
-        data.extend_from_slice(&Into::<Vec<u8>>::into(header.clone()));
-        data.extend_from_slice(&body);
+        // Serialize header with checksum = 0 to calculate checksum
+        let mut header_data = Vec::with_capacity(27 + header.segment_table.len());
+        header.write_to(&mut header_data);
 
-        // Checksum is calculated with the checksum field set to 0 with the data
-        let checksum = crc::Crc::<u32>::new(&CRC_32_OGG).checksum(&data);
+        // Calculate checksum using a digest to avoid copying the body
+        let crc = crc::Crc::<u32>::new(&CRC_32_OGG);
+        let mut digest = crc.digest();
+        digest.update(&header_data);
+        digest.update(&body);
+        let checksum = digest.finalize();
 
         header.checksum = checksum;
 
@@ -124,11 +131,9 @@ impl OggPage {
 
 impl Into<Vec<u8>> for OggPage {
     fn into(self) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        data.extend_from_slice(&Into::<Vec<u8>>::into(self.header));
-        data.extend_from_slice(&Into::<Vec<u8>>::into(self.body));
-
+        let mut data = Vec::with_capacity(27 + self.header.segment_table.len() + self.body.data.len());
+        self.header.write_to(&mut data);
+        data.extend_from_slice(&self.body.data);
         data
     }
 }

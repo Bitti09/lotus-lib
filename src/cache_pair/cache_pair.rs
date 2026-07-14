@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -19,10 +19,10 @@ pub trait CachePair {
     fn is_post_ensmallening(&self) -> bool;
 
     /// Returns the Table of Contents (TOC) file path.
-    fn toc_path(&self) -> PathBuf;
+    fn toc_path(&self) -> &Path;
 
     /// Returns the cache file path.
-    fn cache_path(&self) -> PathBuf;
+    fn cache_path(&self) -> &Path;
 
     /// Reads the TOC file.
     ///

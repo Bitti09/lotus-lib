@@ -1,5 +1,6 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use arctree::Node as ArcNode;
 
@@ -49,6 +50,11 @@ pub trait FileNode {
 
     /// Returns the decompressed length of the file.
     fn len(&self) -> i32;
+
+    /// Returns whether the file is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Trait for directory nodes.
@@ -115,13 +121,13 @@ impl Node {
     }
 
     /// Returns the name of the node.
-    pub fn name(&self) -> String {
-        self.node.read().name().to_string()
+    pub fn name(&self) -> Arc<str> {
+        self.node.read().name().clone()
     }
 
-    /// Returns the path of the node.
-    pub fn path(&self) -> PathBuf {
-        self.node.read().path.clone()
+    /// Full absolute path (e.g. "/Lotus/Interface/Graphics/Logos/Foo.png").
+    pub fn path(&self) -> Arc<Path> {
+        self.node.read().path().clone()
     }
 
     /// Returns the kind of the node.
@@ -137,19 +143,19 @@ impl Node {
 
 impl FileNode for Node {
     fn cache_offset(&self) -> i64 {
-        self.node.read().cache_offset().unwrap().clone()
+        *self.node.read().cache_offset().unwrap()
     }
 
     fn timestamp(&self) -> i64 {
-        self.node.read().timestamp().unwrap().clone()
+        *self.node.read().timestamp().unwrap()
     }
 
     fn comp_len(&self) -> i32 {
-        self.node.read().comp_len().unwrap().clone()
+        *self.node.read().comp_len().unwrap()
     }
 
     fn len(&self) -> i32 {
-        self.node.read().len().unwrap().clone()
+        *self.node.read().len().unwrap()
     }
 }
 
@@ -166,7 +172,7 @@ impl DirectoryNode for Node {
     fn get_child(&self, name: &str) -> Option<Node> {
         self.node
             .children()
-            .find(|child| *child.read().name() == *name)
+            .find(|child| child.read().name().as_ref() == name)
             .map(|child| Node {
                 node: child.clone(),
             })
@@ -175,8 +181,8 @@ impl DirectoryNode for Node {
 
 #[derive(Debug)]
 struct NodeData {
-    name: String,
-    path: PathBuf,
+    name: Arc<str>,
+    path: Arc<Path>,
     kind: NodeKind,
     cache_offset: Option<i64>,
     timestamp: Option<i64>,
@@ -195,8 +201,8 @@ impl NodeData {
         len: Option<i32>,
     ) -> Self {
         Self {
-            name: String::from(name),
-            path,
+            name: Arc::from(name),
+            path: Arc::from(path.into_boxed_path()),
             kind,
             cache_offset,
             timestamp,
@@ -205,8 +211,12 @@ impl NodeData {
         }
     }
 
-    fn name(&self) -> &String {
+    fn name(&self) -> &Arc<str> {
         &self.name
+    }
+
+    fn path(&self) -> &Arc<Path> {
+        &self.path
     }
 
     fn kind(&self) -> NodeKind {

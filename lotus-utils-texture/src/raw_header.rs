@@ -1,6 +1,7 @@
 use anyhow::Error;
 use zerocopy::{LittleEndian, ByteOrder};
 
+#[allow(dead_code)]
 pub struct RawTextureHeader<'a> {
     pub hash: &'a [u8; 16],
     pub merged_file_count: u32,

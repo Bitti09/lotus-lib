@@ -6,7 +6,7 @@ use crate::opus::{OpusHead, OpusTags};
 use crate::raw_header::RawAudioHeader;
 
 /// Represents a parsed audio header containing file format, channels, and sizes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AudioHeader {
     /// The compression format of the audio file.
     pub format_tag: CompressionFormat,

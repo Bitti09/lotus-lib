@@ -42,17 +42,32 @@ pub struct RawAudioHeader<'a> {
     pub size: u32,
 }
 
+fn check_bounds(data: &[u8], offset: usize, len: usize) -> Result<(), Error> {
+    if offset + len > data.len() {
+        return Err(anyhow::anyhow!(
+            "Header data truncated: offset {} + len {} is out of bounds for slice of length {}",
+            offset,
+            len,
+            data.len()
+        ));
+    }
+    Ok(())
+}
+
 impl<'a> TryFrom<&'a [u8]> for RawAudioHeader<'a> {
     type Error = Error;
 
     fn try_from(data: &'a [u8]) -> Result<Self, Self::Error> {
+        check_bounds(data, 0, 20)?;
         let hash = &data[0..16];
         let merged_file_count = LittleEndian::read_u32(&data[16..20]);
 
         let mut offset = 20;
         let mut file_paths = Vec::with_capacity(merged_file_count as usize);
         for _ in 0..merged_file_count {
+            check_bounds(data, offset, 4)?;
             let path_length = LittleEndian::read_u32(&data[offset..offset + 4]) as usize;
+            check_bounds(data, offset + 4, path_length)?;
             let path = std::str::from_utf8(&data[offset + 4..offset + 4 + path_length])?;
 
             file_paths.push(path);
@@ -60,54 +75,51 @@ impl<'a> TryFrom<&'a [u8]> for RawAudioHeader<'a> {
             offset += 4 + path_length;
         }
 
+        check_bounds(data, offset, 4)?;
         let arguments_length = LittleEndian::read_u32(&data[offset..offset + 4]);
         offset += 4;
 
+        check_bounds(data, offset, arguments_length as usize)?;
         let arguments = std::str::from_utf8(&data[offset..offset + arguments_length as usize])?;
         offset += arguments_length as usize;
 
         // If the arguments length is > 0, then we need to skip the null byte
         if arguments_length > 0 {
+            check_bounds(data, offset, 1)?;
             offset += 1;
         }
 
+        check_bounds(data, offset, 12)?;
         let file_type = LittleEndian::read_u32(&data[offset..offset + 4]);
-        offset += 4;
-
-        let format_tag = LittleEndian::read_u32(&data[offset..offset + 4]);
-        offset += 4;
-
-        let unknown1 = LittleEndian::read_u32(&data[offset..offset + 4]);
-        offset += 4;
+        let format_tag = LittleEndian::read_u32(&data[offset + 4..offset + 8]);
+        let unknown1 = LittleEndian::read_u32(&data[offset + 8..offset + 12]);
+        offset += 12;
 
         // Check if we have the early format where unknown2 is 28 bytes
         let unknown2_len = if file_type == 0x87 { 28 } else { 24 };
+        check_bounds(data, offset, unknown2_len)?;
         let unknown2 = &data[offset..offset + unknown2_len];
         offset += unknown2_len;
 
+        check_bounds(data, offset, 4)?;
         let samples_per_second = LittleEndian::read_u32(&data[offset..offset + 4]);
         offset += 4;
 
+        check_bounds(data, offset, 2)?;
         let bits_per_sample = data[offset];
         let channels = data[offset + 1];
         offset += 2;
 
+        check_bounds(data, offset, 12)?;
         let unknown3 = LittleEndian::read_u32(&data[offset..offset + 4]);
-        offset += 4;
-
-        let average_bytes_per_second = LittleEndian::read_u32(&data[offset..offset + 4]);
-        offset += 4;
-
-        let block_align = LittleEndian::read_u16(&data[offset..offset + 2]);
-        offset += 2;
-
-        let samples_per_block = LittleEndian::read_u16(&data[offset..offset + 2]);
-        offset += 2;
-
-        let unknown4 = &data[offset..offset + 12];
+        let average_bytes_per_second = LittleEndian::read_u32(&data[offset + 4..offset + 8]);
+        let block_align = LittleEndian::read_u16(&data[offset + 8..offset + 10]);
+        let samples_per_block = LittleEndian::read_u16(&data[offset + 10..offset + 12]);
         offset += 12;
 
-        let size = LittleEndian::read_u32(&data[offset..offset + 4]);
+        check_bounds(data, offset, 16)?;
+        let unknown4 = &data[offset..offset + 12];
+        let size = LittleEndian::read_u32(&data[offset + 12..offset + 16]);
 
         Ok(RawAudioHeader {
             hash: hash.try_into()?,

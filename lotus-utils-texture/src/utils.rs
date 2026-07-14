@@ -13,6 +13,7 @@ use crate::header::TextureHeader;
 use crate::raw_header::RawTextureHeader;
 use crate::kind::TextureKind;
 
+/// Texture extraction and detection trait for Warframe cache packages.
 pub trait Texture {
     /// Check if the given node is a texture.
     ///
@@ -39,7 +40,10 @@ impl Texture for Package<CachePairReader> {
             .borrow(PackageType::H)
             .ok_or(Error::msg("No header file found"))?;
 
-        let header_file_data = h_cache.decompress_data(node.clone())?;
+        let h_node = h_cache
+            .get_file_node(node.path().to_str().unwrap())
+            .ok_or(Error::msg("Header node not found for path"))?;
+        let header_file_data = h_cache.decompress_data(h_node)?;
         let header = match RawTextureHeader::try_from(header_file_data.as_slice()) {
             Ok(header) => header,
             Err(_) => return Ok(false),
@@ -63,7 +67,10 @@ impl Texture for Package<CachePairReader> {
         };
 
         // Get the decompressed header file data
-        let header_file_data = h_cache.decompress_data(node.clone())?;
+        let h_node = h_cache
+            .get_file_node(node.path().to_str().unwrap())
+            .ok_or(Error::msg("Header node not found for path"))?;
+        let header_file_data = h_cache.decompress_data(h_node)?;
 
         // Parse the header file
         let header = TextureHeader::try_from(header_file_data.as_slice())?;
@@ -81,7 +88,7 @@ impl Texture for Package<CachePairReader> {
                 Some(f_cache) => f_cache,
                 None => return Err(Error::msg("No F cache found")),
             };
-            let file_node = f_cache.get_file_node(node.path()).unwrap();
+            let file_node = f_cache.get_file_node(node.path().to_str().unwrap()).unwrap();
 
             debug!("Cache offset: {}", file_node.cache_offset() as u64);
             debug!("Cache image size: {}", file_node.comp_len() as u64);
@@ -121,7 +128,7 @@ impl Texture for Package<CachePairReader> {
                 Some(b_cache) => b_cache,
                 None => return Err(Error::msg("No B cache found")),
             };
-            let file_node = b_cache.get_file_node(node.path()).unwrap();
+            let file_node = b_cache.get_file_node(node.path().to_str().unwrap()).unwrap();
 
             debug!("Cache offset: {}", file_node.cache_offset() as u64);
             debug!("Cache image size: {}", file_node.comp_len() as u64);
@@ -174,10 +181,7 @@ fn get_real_cache_image_offset(
 }
 
 fn get_texture_file_name(node: &Node) -> String {
-    let mut file_name = node.name();
-    if file_name.ends_with(".png") {
-        file_name.truncate(file_name.len() - 4);
-    }
-    file_name.push_str(".dds");
-    file_name
+    let name = node.name();
+    let stem = name.rsplit_once('.').map(|(s, _)| s).unwrap_or(&name);
+    format!("{}.dds", stem)
 }

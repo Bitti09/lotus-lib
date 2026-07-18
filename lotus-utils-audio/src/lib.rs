@@ -1,5 +1,5 @@
 //! Crate `lotus-utils-audio` provides utilities for handling, parsing, and
-//! converting audio files extracted from Warframe cache pairs.
+//! converting audio files extracted from Warframe and Soulframe cache pairs.
 
 /// Module containing types representing compression formats of audio caches.
 pub mod compression_format;

@@ -6,7 +6,10 @@ use crate::cache_pair::CachePair;
 use crate::package::package::Package;
 
 /// Supported localization suffixes.
-pub const LOCALIZATION_SUFFIXES: &[&str] = &["_en", "_de", "_fr", "_it", "_es", "_ja", "_ko", "_pl", "_pt", "_ru", "_tr", "_uk", "_zh", "_xx"];
+pub const LOCALIZATION_SUFFIXES: &[&str] = &[
+    "_en", "_de", "_fr", "_it", "_es", "_ja", "_ko", "_pl", "_pt", "_ru", "_tr", "_uk", "_zh",
+    "_xx",
+];
 
 /// A collection of packages.
 pub struct PackageCollection<T: CachePair> {
@@ -59,7 +62,7 @@ impl<T: CachePair> PackageCollection<T> {
     /// Returns whether the package is post-ensmallening.
     ///
     /// This is used to determine how to decompress the data from before "The Great Ensmallening"
-    /// update of Warframe.
+    /// update of Warframe. Also applies to Soulframe.
     pub fn is_post_ensmallening(&self) -> bool {
         self.is_post_ensmallening
     }
@@ -91,7 +94,9 @@ impl<T: CachePair> PackageCollection<T> {
 
     /// Check if a package name has a localization suffix.
     pub fn is_localized_package(package_name: &str) -> bool {
-        LOCALIZATION_SUFFIXES.iter().any(|suffix| package_name.ends_with(suffix))
+        LOCALIZATION_SUFFIXES
+            .iter()
+            .any(|suffix| package_name.ends_with(suffix))
     }
 
     /// Get the base package name without localization suffix.
@@ -105,7 +110,10 @@ impl<T: CachePair> PackageCollection<T> {
     }
 
     /// Get all localization variants for a base package name.
-    pub fn get_localization_variants<'a>(&'a self, base_name: &'a str) -> Vec<(&'a str, &'a Package<T>)> {
+    pub fn get_localization_variants<'a>(
+        &'a self,
+        base_name: &'a str,
+    ) -> Vec<(&'a str, &'a Package<T>)> {
         let mut variants = Vec::new();
 
         if let Some(pkg) = self.packages.get(base_name) {
@@ -113,9 +121,10 @@ impl<T: CachePair> PackageCollection<T> {
         }
 
         for suffix in LOCALIZATION_SUFFIXES {
-            let localized_key = self.packages.keys().find(|k| {
-                k.as_str() == format!("{}{}", base_name, suffix).as_str()
-            });
+            let localized_key = self
+                .packages
+                .keys()
+                .find(|k| k.as_str() == format!("{}{}", base_name, suffix).as_str());
             if let Some(key) = localized_key {
                 if let Some(pkg) = self.packages.get(key.as_str()) {
                     variants.push((key.as_str(), pkg));

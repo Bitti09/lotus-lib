@@ -21,11 +21,12 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A library for reading data from Warframe's files stored in the Cache.Windows folder"
+description = "A library for reading data from Warframe and Soulframe files stored in the Cache.Windows folder"
 homepage = "https://github.com/sehnryr/lotus-lib"
 readme = "README.md"
 keywords = [
     "warframe",
+    "soulframe",
     "cache",
     "decompression",
 ]

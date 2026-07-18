@@ -15,7 +15,7 @@ pub trait CachePair {
     /// Returns whether the package is post-ensmallening.
     ///
     /// This is used to determine how to decompress the data from before "The Great Ensmallening"
-    /// update of Warframe.
+    /// update of Warframe. Also applies to Soulframe.
     fn is_post_ensmallening(&self) -> bool;
 
     /// Returns the Table of Contents (TOC) file path.
@@ -38,6 +38,8 @@ pub trait CachePair {
 
     /// Returns the size of the cache file.
     fn cache_size(&self) -> u64 {
-        std::fs::metadata(self.cache_path()).map(|m| m.len()).unwrap_or(0)
+        std::fs::metadata(self.cache_path())
+            .map(|m| m.len())
+            .unwrap_or(0)
     }
 }

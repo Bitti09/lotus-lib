@@ -61,11 +61,16 @@ impl Toc {
             args.iter().any(|arg| {
                 matches!(
                     arg.as_str(),
-                    "--resurrect" | "-resurrect"
-                        | "--resurrect-deleted" | "-resurrect-deleted"
-                        | "--resurectdeleted" | "-resurectdeleted"
-                        | "--resurrect-modified" | "-resurrect-modified"
-                        | "--resurectmodified" | "-resurectmodified"
+                    "--resurrect"
+                        | "-resurrect"
+                        | "--resurrect-deleted"
+                        | "-resurrect-deleted"
+                        | "--resurectdeleted"
+                        | "-resurectdeleted"
+                        | "--resurrect-modified"
+                        | "-resurrect-modified"
+                        | "--resurectmodified"
+                        | "-resurectmodified"
                 )
             })
         };
@@ -93,7 +98,7 @@ impl Toc {
             let null_index = entry.name.iter().position(|&x| x == 0).unwrap_or(64);
             let entry_name_bytes = &entry.name[..null_index];
             let entry_name = std::str::from_utf8(entry_name_bytes)?;
-            
+
             let entry_name_owned = if entry.timestamp == 0 {
                 // Append suffix to indicate deleted/old version and prevent collision
                 if let Some(pos) = entry_name.rfind('.') {
@@ -118,24 +123,24 @@ impl Toc {
                 .unwrap();
 
             let parent_path = &dir_paths[entry.parent_dir_index as usize];
-            
+
             // Normalize path and build both normalized and full paths in one pass
             let entry_name_norm = if entry_name_owned.contains('\\') {
                 entry_name_owned.replace('\\', "/")
             } else {
                 entry_name_owned.clone()
             };
-            
+
             let norm_path = if parent_path.is_empty() {
-                entry_name_norm.to_lowercase()
+                format!("/{}", entry_name_norm).to_lowercase()
             } else {
-                format!("{}/{}", parent_path, entry_name_norm).to_lowercase()
+                format!("/{}/{}", parent_path, entry_name_norm).to_lowercase()
             };
-            
+
             let full_path = if parent_path.is_empty() {
-                PathBuf::from(&entry_name_norm)
+                PathBuf::from(format!("/{}", entry_name_norm))
             } else {
-                PathBuf::from(format!("{}/{}", parent_path, entry_name_norm))
+                PathBuf::from(format!("/{}/{}", parent_path, entry_name_norm))
             };
 
             // If the cache offset is -1, then the entry is a directory
@@ -143,7 +148,11 @@ impl Toc {
                 let dir_node = Node::directory(&entry_name_owned, full_path);
 
                 parent_node.append(dir_node.clone());
-                dir_paths.push(format!("{}/{}", parent_path, entry_name_norm));
+                dir_paths.push(if parent_path.is_empty() {
+                    format!("{}", entry_name_norm)
+                } else {
+                    format!("{}/{}", parent_path, entry_name_norm)
+                });
                 self.node_lookup.insert(norm_path, dir_node.clone());
                 self.directories.push(dir_node);
             } else {
@@ -180,12 +189,20 @@ impl Toc {
             return None;
         }
 
-        if !path.starts_with('/') {
-            panic!("Path must be absolute");
-        }
-
         let path_norm = path.replace('\\', "/").to_lowercase();
-        self.node_lookup.get(&path_norm).cloned()
+        if let Some(node) = self.node_lookup.get(&path_norm) {
+            return Some(node.clone());
+        }
+        // Try with leading '/' stripped
+        if let Some(stripped) = path_norm.strip_prefix('/') {
+            return self.node_lookup.get(stripped).cloned();
+        }
+        // Try with leading '/' added
+        if !path_norm.starts_with('/') {
+            let with_slash = format!("/{}", path_norm);
+            return self.node_lookup.get(&with_slash).cloned();
+        }
+        None
     }
 
     pub fn get_directory_node(&self, path: &str) -> Option<Node> {

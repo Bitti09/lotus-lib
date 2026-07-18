@@ -78,7 +78,7 @@ impl<T: CachePair> Package<T> {
     /// Returns whether the package is post-ensmallening.
     ///
     /// This is used to determine how to decompress the data from before "The Great Ensmallening"
-    /// update of Warframe.
+    /// update of Warframe. Also applies to Soulframe.
     pub fn is_post_ensmallening(&self) -> bool {
         self.is_post_ensmallening
     }
